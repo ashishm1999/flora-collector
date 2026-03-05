@@ -1,9 +1,17 @@
-import { Link } from 'react-router-dom'
-import { Leaf, LayoutDashboard, Plus, Menu, X } from 'lucide-react'
+import { Link, useNavigate } from 'react-router-dom'
+import { Leaf, LayoutDashboard, Plus, Menu, X, LogOut } from 'lucide-react'
 import { useState } from 'react'
+import { useAuth } from '../context/AuthContext'
 
 export default function Layout({ children }) {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false)
+  const { logout } = useAuth()
+  const navigate = useNavigate()
+
+  const handleLogout = () => {
+    logout()
+    navigate('/login')
+  }
 
   return (
     <div className="min-h-screen bg-gray-50">
@@ -26,6 +34,9 @@ export default function Layout({ children }) {
               <Link to="/dashboard" className="text-gray-600 hover:text-gray-900 text-sm font-medium flex items-center gap-1">
                 <LayoutDashboard className="w-4 h-4" /> Dashboard
               </Link>
+              <button onClick={handleLogout} className="text-gray-400 hover:text-red-600 text-sm font-medium flex items-center gap-1 ml-2">
+                <LogOut className="w-4 h-4" /> Logout
+              </button>
             </nav>
 
             {/* Mobile menu button */}
@@ -50,6 +61,9 @@ export default function Layout({ children }) {
                 <Link to="/dashboard" className="px-3 py-2 text-gray-600 hover:bg-gray-50 rounded" onClick={() => setMobileMenuOpen(false)}>
                   Dashboard
                 </Link>
+                <button onClick={() => { setMobileMenuOpen(false); handleLogout() }} className="px-3 py-2 text-left text-red-500 hover:bg-red-50 rounded">
+                  Logout
+                </button>
               </nav>
             </div>
           )}
