@@ -101,9 +101,19 @@ export default function SpeciesDetailPage() {
               {species.common_names?.length > 0 && (
                 <p className="text-lg text-gray-600 mt-1">{species.common_names.join(', ')}</p>
               )}
-              <div className="flex items-center gap-2 mt-2">
+              <div className="flex items-center gap-2 mt-2 flex-wrap">
                 {species.family && <span className="text-sm bg-gray-100 px-2 py-0.5 rounded text-gray-600">{species.family}</span>}
-                <ConservationBadge status={species.conservation_status} />
+                {species.plant_origin && (
+                  <span className={`text-sm px-2 py-0.5 rounded font-medium ${
+                    species.plant_origin === 'native' ? 'bg-emerald-100 text-emerald-800' :
+                    species.plant_origin === 'indigenous' ? 'bg-teal-100 text-teal-800' :
+                    species.plant_origin === 'exotic' ? 'bg-orange-100 text-orange-800' :
+                    'bg-gray-100 text-gray-700'
+                  }`}>
+                    {species.plant_origin.charAt(0).toUpperCase() + species.plant_origin.slice(1)}
+                  </span>
+                )}
+                <ConservationBadge status={species.conservation_status} compact />
               </div>
             </div>
             <div className="flex gap-2">
@@ -160,11 +170,37 @@ export default function SpeciesDetailPage() {
               <FlaskConical className="w-5 h-5 text-emerald-600" /> Traits
             </h2>
             <dl>
+              <InfoRow label="Plant Origin" value={species.plant_origin && species.plant_origin.charAt(0).toUpperCase() + species.plant_origin.slice(1)} />
               <InfoRow label="Life Form" value={species.life_form} />
               <InfoRow label="Height" value={species.height} />
               <InfoRow label="Flowering Season" value={species.flowering_season} />
               <InfoRow label="Habitat" value={species.habitat_notes} />
             </dl>
+
+            {species.flowering_months?.length > 0 && (
+              <div className="mt-4">
+                <h4 className="text-xs font-medium text-gray-500 uppercase mb-1.5">Flowering Months</h4>
+                <div className="flex flex-wrap gap-1">
+                  {species.flowering_months.map((m) => (
+                    <span key={m} className="px-2 py-0.5 bg-pink-50 text-pink-700 text-xs font-medium rounded">
+                      {m}
+                    </span>
+                  ))}
+                </div>
+              </div>
+            )}
+            {species.fruiting_months?.length > 0 && (
+              <div className="mt-3">
+                <h4 className="text-xs font-medium text-gray-500 uppercase mb-1.5">Fruiting Months</h4>
+                <div className="flex flex-wrap gap-1">
+                  {species.fruiting_months.map((m) => (
+                    <span key={m} className="px-2 py-0.5 bg-amber-50 text-amber-700 text-xs font-medium rounded">
+                      {m}
+                    </span>
+                  ))}
+                </div>
+              </div>
+            )}
           </div>
 
           {/* Synonyms */}
@@ -227,16 +263,14 @@ export default function SpeciesDetailPage() {
             </div>
           )}
 
-          {/* Conservation */}
-          {species.conservation_status?.iucnCategory && (
-            <div className="bg-white border border-gray-200 rounded-lg p-6">
-              <h2 className="text-lg font-semibold text-gray-900 mb-3">Conservation</h2>
-              <ConservationBadge status={species.conservation_status} />
-              {species.conservation_status.authority && (
-                <p className="text-xs text-gray-500 mt-2">Authority: {species.conservation_status.authority}</p>
-              )}
-            </div>
-          )}
+          {/* Conservation — always shown; falls back to "Not Threatened" */}
+          <div className="bg-white border border-gray-200 rounded-lg p-6">
+            <h2 className="text-lg font-semibold text-gray-900 mb-3">Conservation Status</h2>
+            <ConservationBadge status={species.conservation_status} />
+            {species.conservation_status?.authority && (
+              <p className="text-xs text-gray-500 mt-2">Authority: {species.conservation_status.authority}</p>
+            )}
+          </div>
 
           {/* External Links */}
           <div className="bg-white border border-gray-200 rounded-lg p-6">

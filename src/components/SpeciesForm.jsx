@@ -10,8 +10,17 @@ import { Loader2, Plus, Trash2, X } from 'lucide-react'
 const RANKS = ['SPECIES', 'SUBSPECIES', 'VARIETY']
 const TAXONOMIC_STATUSES = ['Accepted', 'Synonym', 'Doubtful', 'Misapplied']
 const IUCN_CATEGORIES = ['NE', 'DD', 'LC', 'NT', 'VU', 'EN', 'CR', 'EW', 'EX']
+const FFG_STATUSES = ['Not Listed', 'Vulnerable', 'Endangered', 'Critically Endangered', 'Extinct']
+const EPBC_STATUSES = ['Not Listed', 'Vulnerable', 'Endangered', 'Critically Endangered', 'Extinct in the Wild', 'Extinct']
 const LIFE_FORMS = ['tree', 'shrub', 'herb', 'climber', 'fern', 'grass', 'sedge', 'rush', 'aquatic']
 const AU_STATES = ['QLD', 'NSW', 'ACT', 'VIC', 'TAS', 'SA', 'WA', 'NT']
+const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
+const PLANT_ORIGINS = [
+  { value: 'native', label: 'Native', description: 'Native to Australia' },
+  { value: 'indigenous', label: 'Indigenous', description: 'Indigenous to the local region (e.g. Victoria)' },
+  { value: 'exotic', label: 'Exotic', description: 'Introduced from outside Australia' },
+  { value: 'unknown', label: 'Unknown', description: 'Origin not yet determined' },
+]
 
 function FormField({ label, error, sources, children, required }) {
   return (
@@ -120,9 +129,12 @@ export default function SpeciesForm({
       inaturalist_id: null,
       ala_guid: '',
       vicflora_uuid: '',
+      plant_origin: '',
       life_form: '',
       height: '',
       flowering_season: '',
+      flowering_months: [],
+      fruiting_months: [],
       habitat_notes: '',
       description: '',
       first_published: '',
@@ -160,9 +172,11 @@ export default function SpeciesForm({
       inaturalist_id: data.inaturalist_id,
       ala_guid: data.ala_guid,
       vicflora_uuid: data.vicflora_uuid,
+      plant_origin: data.plant_origin,
       life_form: data.life_form,
       description: data.description,
       habitat_notes: data.habitat_notes,
+      notes: data.notes,
     }
 
     for (const [key, value] of Object.entries(fieldMap)) {
@@ -176,6 +190,8 @@ export default function SpeciesForm({
     if (data.synonyms?.length) setValue('synonyms', data.synonyms)
     if (data.distribution_native?.length) setValue('distribution_native', data.distribution_native)
     if (data.distribution_introduced?.length) setValue('distribution_introduced', data.distribution_introduced)
+    if (data.flowering_months?.length) setValue('flowering_months', data.flowering_months)
+    if (data.fruiting_months?.length) setValue('fruiting_months', data.fruiting_months)
     if (data.conservation_status && Object.keys(data.conservation_status).length > 0) {
       setValue('conservation_status', data.conservation_status)
     }
@@ -403,6 +419,9 @@ export default function SpeciesForm({
           Conservation Status
           <SourceBadge sources={sources.conservation_status} />
         </h3>
+        <p className="text-xs text-gray-500">
+          Leave blank if not threatened — the public detail page will show <em>Not Threatened</em> by default.
+        </p>
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           <FormField label="IUCN Category">
             <select
@@ -414,26 +433,48 @@ export default function SpeciesForm({
               {IUCN_CATEGORIES.map((c) => <option key={c} value={c}>{c}</option>)}
             </select>
           </FormField>
+          <FormField label="FFG Act (Victoria)">
+            <select
+              value={watch('conservation_status')?.ffgStatus || ''}
+              onChange={(e) => setValue('conservation_status', { ...getValues('conservation_status'), ffgStatus: e.target.value || null })}
+              className={inputClass}
+            >
+              <option value="">Select...</option>
+              {FFG_STATUSES.map((s) => <option key={s} value={s}>{s}</option>)}
+            </select>
+          </FormField>
+          <FormField label="EPBC Act (National)">
+            <select
+              value={watch('conservation_status')?.epbcStatus || ''}
+              onChange={(e) => setValue('conservation_status', { ...getValues('conservation_status'), epbcStatus: e.target.value || null })}
+              className={inputClass}
+            >
+              <option value="">Select...</option>
+              {EPBC_STATUSES.map((s) => <option key={s} value={s}>{s}</option>)}
+            </select>
+          </FormField>
           <FormField label="Authority">
             <input
               value={watch('conservation_status')?.authority || ''}
               onChange={(e) => setValue('conservation_status', { ...getValues('conservation_status'), authority: e.target.value || null })}
               className={inputClass}
-              placeholder="e.g. IUCN, EPBC Act"
+              placeholder="e.g. IUCN, EPBC Act, FFG Act"
             />
           </FormField>
-          <FormField label="National Status">
-            <input
-              value={watch('conservation_status')?.nationalStatus || ''}
-              onChange={(e) => setValue('conservation_status', { ...getValues('conservation_status'), nationalStatus: e.target.value || null })}
-              className={inputClass}
-            />
-          </FormField>
-          <FormField label="State Status">
+          <FormField label="State Status (other)">
             <input
               value={watch('conservation_status')?.stateStatus || ''}
               onChange={(e) => setValue('conservation_status', { ...getValues('conservation_status'), stateStatus: e.target.value || null })}
               className={inputClass}
+              placeholder="Non-Victorian state listing"
+            />
+          </FormField>
+          <FormField label="National Status (other)">
+            <input
+              value={watch('conservation_status')?.nationalStatus || ''}
+              onChange={(e) => setValue('conservation_status', { ...getValues('conservation_status'), nationalStatus: e.target.value || null })}
+              className={inputClass}
+              placeholder="Other national listing"
             />
           </FormField>
         </div>
@@ -442,6 +483,34 @@ export default function SpeciesForm({
       {/* Section 7: Description & Traits */}
       <div className={sectionClass}>
         <h3 className="text-lg font-semibold text-gray-900 border-b pb-2">Description & Traits</h3>
+
+        {/* Plant Origin */}
+        <FormField label="Plant Origin" error={errors.plant_origin}>
+          <div className="flex flex-wrap gap-2">
+            {PLANT_ORIGINS.map((opt) => {
+              const selected = watch('plant_origin') === opt.value
+              return (
+                <button
+                  key={opt.value}
+                  type="button"
+                  onClick={() => setValue('plant_origin', selected ? '' : opt.value, { shouldValidate: true })}
+                  title={opt.description}
+                  className={`px-3 py-1.5 text-sm rounded-full border transition-colors ${
+                    selected
+                      ? 'bg-emerald-100 border-emerald-400 text-emerald-800'
+                      : 'bg-white border-gray-300 text-gray-600 hover:border-gray-400'
+                  }`}
+                >
+                  {opt.label}
+                </button>
+              )
+            })}
+          </div>
+          <p className="text-xs text-gray-500 mt-1">
+            <strong>Native</strong> = Australia · <strong>Indigenous</strong> = local region (e.g. Victoria) · <strong>Exotic</strong> = introduced
+          </p>
+        </FormField>
+
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           <FormField label="Life Form" error={errors.life_form} sources={sources.life_form}>
             <ControlledSelect name="life_form" {...ctrl} className={inputClass}>
@@ -452,10 +521,72 @@ export default function SpeciesForm({
           <FormField label="Height" error={errors.height}>
             <ControlledInput name="height" {...ctrl} className={inputClass} placeholder="e.g. 1-12 meters" />
           </FormField>
-          <FormField label="Flowering Season" error={errors.flowering_season}>
-            <ControlledInput name="flowering_season" {...ctrl} className={inputClass} placeholder="e.g. December-May (summer-autumn)" />
-          </FormField>
         </div>
+
+        {/* Flowering Months */}
+        <FormField label="Flowering Months" error={errors.flowering_months}>
+          <div className="flex flex-wrap gap-1.5">
+            {MONTHS.map((m) => {
+              const selected = (watch('flowering_months') || []).includes(m)
+              return (
+                <button
+                  key={m}
+                  type="button"
+                  onClick={() => {
+                    const current = getValues('flowering_months') || []
+                    setValue(
+                      'flowering_months',
+                      selected ? current.filter((x) => x !== m) : [...current, m],
+                      { shouldValidate: true }
+                    )
+                  }}
+                  className={`px-2.5 py-1 text-xs font-medium rounded border transition-colors ${
+                    selected
+                      ? 'bg-pink-100 border-pink-400 text-pink-800'
+                      : 'bg-white border-gray-300 text-gray-600 hover:border-gray-400'
+                  }`}
+                >
+                  {m}
+                </button>
+              )
+            })}
+          </div>
+        </FormField>
+
+        {/* Fruiting Months */}
+        <FormField label="Fruiting Months" error={errors.fruiting_months}>
+          <div className="flex flex-wrap gap-1.5">
+            {MONTHS.map((m) => {
+              const selected = (watch('fruiting_months') || []).includes(m)
+              return (
+                <button
+                  key={m}
+                  type="button"
+                  onClick={() => {
+                    const current = getValues('fruiting_months') || []
+                    setValue(
+                      'fruiting_months',
+                      selected ? current.filter((x) => x !== m) : [...current, m],
+                      { shouldValidate: true }
+                    )
+                  }}
+                  className={`px-2.5 py-1 text-xs font-medium rounded border transition-colors ${
+                    selected
+                      ? 'bg-amber-100 border-amber-400 text-amber-800'
+                      : 'bg-white border-gray-300 text-gray-600 hover:border-gray-400'
+                  }`}
+                >
+                  {m}
+                </button>
+              )
+            })}
+          </div>
+        </FormField>
+
+        <FormField label="Flowering Season (free text, optional)" error={errors.flowering_season}>
+          <ControlledInput name="flowering_season" {...ctrl} className={inputClass} placeholder="e.g. December-May (summer-autumn)" />
+        </FormField>
+
         <FormField label="Description" error={errors.description} sources={sources.description}>
           <ControlledTextarea name="description" {...ctrl} rows={4} className={inputClass} placeholder="Morphological description..." />
         </FormField>

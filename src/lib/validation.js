@@ -26,10 +26,15 @@ export const speciesSchema = z.object({
     authority: z.string().optional().nullable(),
     nationalStatus: z.string().optional().nullable(),
     stateStatus: z.string().optional().nullable(),
+    ffgStatus: z.string().optional().nullable(),  // Vic FFG Act 1988
+    epbcStatus: z.string().optional().nullable(), // National EPBC Act
   }).default({}),
+  plant_origin: z.enum(['native', 'indigenous', 'exotic', 'unknown']).optional().nullable(),
   life_form: z.string().optional().nullable(),
   height: z.string().optional().nullable(),
   flowering_season: z.string().optional().nullable(),
+  flowering_months: z.array(z.string()).default([]),
+  fruiting_months: z.array(z.string()).default([]),
   habitat_notes: z.string().optional().nullable(),
   description: z.string().optional().nullable(),
   first_published: z.string().optional().nullable(),

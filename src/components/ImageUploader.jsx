@@ -1,6 +1,6 @@
-import { useCallback, useState, useEffect } from 'react'
+import { useCallback, useState } from 'react'
 import { useDropzone } from 'react-dropzone'
-import { Upload, X, Star, MapPin, Loader2 } from 'lucide-react'
+import { Upload, X, Star, MapPin, MapPinOff, Loader2 } from 'lucide-react'
 
 const LICENSES = [
   'CC BY 4.0',
@@ -14,13 +14,13 @@ const LICENSES = [
 const ORGANS = ['habit', 'flower', 'leaf', 'fruit', 'bark', 'seed', 'other']
 
 export default function ImageUploader({ images = [], onChange, existingImages = [], onDeleteExisting }) {
-  const [geoStatus, setGeoStatus] = useState('idle') // idle | loading | success | error
+  const [gpsEnabled, setGpsEnabled] = useState(false)
+  const [geoStatus, setGeoStatus] = useState('idle') // idle | loading | success | error | unsupported
   const [currentLocation, setCurrentLocation] = useState(null)
 
-  // Get geolocation on mount
-  useEffect(() => {
+  const requestLocation = useCallback(() => {
     if (!navigator.geolocation) {
-      setGeoStatus('error')
+      setGeoStatus('unsupported')
       return
     }
     setGeoStatus('loading')
@@ -38,6 +38,17 @@ export default function ImageUploader({ images = [], onChange, existingImages = 
       { enableHighAccuracy: true, timeout: 10000 }
     )
   }, [])
+
+  const toggleGps = () => {
+    if (gpsEnabled) {
+      setGpsEnabled(false)
+      setGeoStatus('idle')
+      setCurrentLocation(null)
+    } else {
+      setGpsEnabled(true)
+      requestLocation()
+    }
+  }
 
   const onDrop = useCallback(
     (acceptedFiles) => {
@@ -86,22 +97,68 @@ export default function ImageUploader({ images = [], onChange, existingImages = 
 
   return (
     <div className="space-y-4">
-      {/* Geolocation status */}
-      <div className="flex items-center gap-2 text-sm">
-        <MapPin className="w-4 h-4 text-emerald-600" />
-        {geoStatus === 'loading' && (
-          <span className="text-gray-500 flex items-center gap-1">
-            <Loader2 className="w-3 h-3 animate-spin" /> Getting location...
-          </span>
-        )}
-        {geoStatus === 'success' && currentLocation && (
-          <span className="text-emerald-700">
-            Location: {currentLocation.latitude.toFixed(5)}, {currentLocation.longitude.toFixed(5)}
-          </span>
-        )}
-        {geoStatus === 'error' && (
-          <span className="text-gray-400">Location unavailable — images will be saved without coordinates</span>
-        )}
+      {/* Geolocation toggle */}
+      <div className="flex items-center justify-between gap-3 p-3 bg-gray-50 border border-gray-200 rounded-lg">
+        <div className="flex items-center gap-2 text-sm">
+          {gpsEnabled ? (
+            <MapPin className="w-4 h-4 text-emerald-600" />
+          ) : (
+            <MapPinOff className="w-4 h-4 text-gray-400" />
+          )}
+          <div>
+            <div className="font-medium text-gray-800">Tag images with location</div>
+            {!gpsEnabled && (
+              <div className="text-xs text-gray-500">Off — images saved without GPS coordinates</div>
+            )}
+            {gpsEnabled && geoStatus === 'loading' && (
+              <div className="text-xs text-gray-500 flex items-center gap-1">
+                <Loader2 className="w-3 h-3 animate-spin" /> Getting location...
+              </div>
+            )}
+            {gpsEnabled && geoStatus === 'success' && currentLocation && (
+              <div className="text-xs text-emerald-700">
+                {currentLocation.latitude.toFixed(5)}, {currentLocation.longitude.toFixed(5)}
+                <button
+                  type="button"
+                  onClick={requestLocation}
+                  className="ml-2 text-emerald-600 hover:underline"
+                >
+                  refresh
+                </button>
+              </div>
+            )}
+            {gpsEnabled && geoStatus === 'error' && (
+              <div className="text-xs text-red-600">
+                Location permission denied or unavailable.
+                <button
+                  type="button"
+                  onClick={requestLocation}
+                  className="ml-2 text-emerald-600 hover:underline"
+                >
+                  retry
+                </button>
+              </div>
+            )}
+            {gpsEnabled && geoStatus === 'unsupported' && (
+              <div className="text-xs text-red-600">This browser does not support geolocation.</div>
+            )}
+          </div>
+        </div>
+        <button
+          type="button"
+          onClick={toggleGps}
+          role="switch"
+          aria-checked={gpsEnabled}
+          className={`relative inline-flex h-6 w-11 flex-shrink-0 items-center rounded-full transition-colors ${
+            gpsEnabled ? 'bg-emerald-600' : 'bg-gray-300'
+          }`}
+        >
+          <span
+            className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
+              gpsEnabled ? 'translate-x-6' : 'translate-x-1'
+            }`}
+          />
+        </button>
       </div>
 
       {/* Existing images */}

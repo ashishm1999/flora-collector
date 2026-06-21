@@ -8,6 +8,7 @@ export default function Home() {
   const [search, setSearch] = useState('')
   const [debouncedSearch, setDebouncedSearch] = useState('')
   const [family, setFamily] = useState('')
+  const [plantOrigin, setPlantOrigin] = useState('')
   const [sortBy, setSortBy] = useState('scientific_name')
   const [sortOrder, setSortOrder] = useState('asc')
   const [page, setPage] = useState(1)
@@ -17,6 +18,7 @@ export default function Home() {
   const { species, loading, error, totalCount } = useSpeciesList({
     search: debouncedSearch,
     family,
+    plantOrigin,
     sortBy,
     sortOrder,
     page,
@@ -93,6 +95,20 @@ export default function Home() {
                 placeholder="e.g. Proteaceae"
                 className="px-3 py-1.5 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-emerald-500"
               />
+            </div>
+            <div>
+              <label className="block text-xs text-gray-500 mb-1">Plant Origin</label>
+              <select
+                value={plantOrigin}
+                onChange={(e) => { setPlantOrigin(e.target.value); setPage(1) }}
+                className="px-3 py-1.5 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-emerald-500"
+              >
+                <option value="">All</option>
+                <option value="native">Native</option>
+                <option value="indigenous">Indigenous</option>
+                <option value="exotic">Exotic</option>
+                <option value="unknown">Unknown</option>
+              </select>
             </div>
             <div>
               <label className="block text-xs text-gray-500 mb-1">Sort by</label>
@@ -183,7 +199,7 @@ export default function Home() {
                     {sp.family && (
                       <span className="text-xs bg-gray-100 text-gray-600 px-2 py-0.5 rounded">{sp.family}</span>
                     )}
-                    <ConservationBadge status={sp.conservation_status} />
+                    <ConservationBadge status={sp.conservation_status} compact hideIfNotThreatened />
                   </div>
                 </div>
               </Link>
