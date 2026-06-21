@@ -41,7 +41,7 @@ function AppRoutes() {
 
 export default function App() {
   return (
-    <BrowserRouter basename="/flora-collector">
+    <BrowserRouter basename={import.meta.env.BASE_URL}>
       <AuthProvider>
         <AppRoutes />
         <Toaster position="bottom-right" richColors />
