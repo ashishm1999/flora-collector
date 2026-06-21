@@ -219,35 +219,179 @@ async function fetchPOWO(speciesName) {
 }
 
 // ─── VicFlora ────────────────────────────────────────────────────────────────
+// Authority for Victoria. Two-step: autocomplete → taxonConcept. If the matched
+// concept is a synonym, follow acceptedConcept and re-fetch so we always end up
+// with the accepted name. VicFlora-sourced scalars win in the merge order.
+
+const VICFLORA_GRAPHQL = 'https://vicflora.rbg.vic.gov.au/graphql'
+
+const VICFLORA_MONTH_TO_SHORT = {
+  JANUARY: 'Jan', FEBRUARY: 'Feb', MARCH: 'Mar', APRIL: 'Apr',
+  MAY: 'May', JUNE: 'Jun', JULY: 'Jul', AUGUST: 'Aug',
+  SEPTEMBER: 'Sep', OCTOBER: 'Oct', NOVEMBER: 'Nov', DECEMBER: 'Dec',
+}
+
+// Threshold filters phenology noise (single stray records). Tune if too strict.
+const PHENOLOGY_THRESHOLD = 5
+
+// VicFlora's IUCN-style enum → human label used by ConservationBadge
+const VICFLORA_THREAT_LABEL = {
+  EX: 'Extinct', EW: 'Extinct in the Wild', RE: 'Regionally Extinct',
+  CR: 'Critically Endangered', EN: 'Endangered', VU: 'Vulnerable',
+  NT: 'Near Threatened', LC: 'Least Concern', DD: 'Data Deficient',
+  NA: 'Not Applicable', NE: 'Not Evaluated', TH: 'Threatened',
+}
+
+function vicfloraOriginFrom({ establishmentMeans, endemic }) {
+  if (establishmentMeans === 'INTRODUCED') return 'exotic'
+  if (establishmentMeans === 'NATIVE' || establishmentMeans === 'NATIVE_REINTRODUCED') {
+    return endemic === true ? 'indigenous' : 'native'
+  }
+  if (establishmentMeans === 'UNCERTAIN') return 'unknown'
+  return null
+}
+
+function parseVicfloraProfileHtml(html) {
+  if (!html) return { description: null, habitat_notes: null, notes: null }
+  // Extract by div class. Server-side string parse (no DOMParser in Node, but
+  // this runs in-browser via fetch from a React app — still, regex is fine and
+  // avoids dragging in a parser).
+  const pickBlock = (cls) => {
+    const re = new RegExp(`<div[^>]*class="${cls}"[^>]*>([\\s\\S]*?)<\\/div>`, 'i')
+    const m = html.match(re)
+    return m ? stripHtml(m[1]).trim() : null
+  }
+  return {
+    description: pickBlock('description'),
+    habitat_notes: pickBlock('distribution-habitat'),
+    notes: pickBlock('notes'),
+  }
+}
+
+function stripHtml(s) {
+  return s.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim()
+}
 
 async function fetchVicFlora(speciesName) {
   try {
-    const query = `{
-      taxonConcepts(filter: {taxonName: {scientificName: {eq: "${speciesName}"}}}) {
-        data {
-          id
-          taxonName { scientificName authorship }
-          currentProfile { description habitat }
-        }
-      }
-    }`
-
-    const res = await fetch('https://vicflora.rbg.vic.gov.au/api/graphql', {
+    // Step 1 — autocomplete to find the concept ID
+    const acRes = await fetch(VICFLORA_GRAPHQL, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ query }),
+      body: JSON.stringify({
+        query: `query($q:String!){ taxonConceptAutocomplete(q:$q) { id taxonomicStatus taxonName { fullName } } }`,
+        variables: { q: speciesName },
+      }),
     })
-    if (!res.ok) return null
-    const data = await res.json()
-    const concepts = data?.data?.taxonConcepts?.data ?? []
-    if (concepts.length === 0) return null
+    if (!acRes.ok) return null
+    const acData = await acRes.json()
+    const matches = acData?.data?.taxonConceptAutocomplete ?? []
+    if (matches.length === 0) return null
 
-    const taxon = concepts[0]
+    // Prefer an exact name match if available, else first result
+    const exact = matches.find((m) => m.taxonName?.fullName?.toLowerCase() === speciesName.toLowerCase())
+    let conceptId = (exact ?? matches[0]).id
+
+    // Step 2 — fetch full taxon concept
+    const fetchConcept = async (id) => {
+      const res = await fetch(VICFLORA_GRAPHQL, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          query: `query($id:ID!){ taxonConcept(id:$id) {
+            id
+            taxonomicStatus
+            establishmentMeans
+            endemic
+            epbc
+            ffg
+            taxonName { fullName fullNameWithAuthorship namePart authorship }
+            acceptedConcept { id }
+            preferredVernacularName { name }
+            vernacularNames { name isPreferred }
+            synonyms { fullNameWithAuthorship fullName }
+            currentProfile { profile }
+            phenology { month buds flowers fruit }
+          } }`,
+          variables: { id },
+        }),
+      })
+      if (!res.ok) return null
+      const j = await res.json()
+      return j?.data?.taxonConcept ?? null
+    }
+
+    let concept = await fetchConcept(conceptId)
+    if (!concept) return null
+
+    // If the matched concept is a synonym, follow acceptedConcept and re-fetch
+    if (concept.taxonomicStatus !== 'ACCEPTED' && concept.acceptedConcept?.id && concept.acceptedConcept.id !== conceptId) {
+      const accepted = await fetchConcept(concept.acceptedConcept.id)
+      if (accepted) concept = accepted
+    }
+
+    // Build the merged result. VicFlora is authoritative for Victoria → scalars
+    // here win in the merge order (we put VicFlora first in the parallel fetch).
+    const profile = parseVicfloraProfileHtml(concept.currentProfile?.profile)
+
+    // Phenology → flowering_months / fruiting_months (3-letter codes)
+    const flowering_months = []
+    const fruiting_months = []
+    for (const p of concept.phenology ?? []) {
+      const short = VICFLORA_MONTH_TO_SHORT[p.month]
+      if (!short) continue
+      if ((p.flowers ?? 0) >= PHENOLOGY_THRESHOLD) flowering_months.push(short)
+      if ((p.fruit ?? 0) >= PHENOLOGY_THRESHOLD) fruiting_months.push(short)
+    }
+
+    // Synonyms — VicFlora's own synonym list + the user's query name if it
+    // differs from VicFlora's accepted name (e.g. user typed Isotoma but VicFlora
+    // calls it Lobelia → record Isotoma as a synonym)
+    const acceptedFull = concept.taxonName?.fullName ?? null
+    const synonyms = (concept.synonyms ?? [])
+      .map((s) => s.fullNameWithAuthorship || s.fullName)
+      .filter(Boolean)
+    if (acceptedFull && speciesName.toLowerCase() !== acceptedFull.toLowerCase()) {
+      synonyms.unshift(speciesName)
+    }
+
+    // Common names
+    const common_names = (concept.vernacularNames ?? [])
+      .map((v) => v.name)
+      .filter(Boolean)
+
+    // Conservation — VicFlora gives EPBC + FFG codes. Map to labels for badge.
+    const conservation_status = {}
+    if (concept.epbc) {
+      conservation_status.epbcStatus = VICFLORA_THREAT_LABEL[concept.epbc] ?? concept.epbc
+      conservation_status.authority = 'EPBC Act'
+    }
+    if (concept.ffg) {
+      conservation_status.ffgStatus = VICFLORA_THREAT_LABEL[concept.ffg] ?? concept.ffg
+      if (!conservation_status.authority) conservation_status.authority = 'FFG Act 1988'
+    }
+
     return {
       source: 'VicFlora',
-      vicflora_uuid: taxon.id ?? null,
-      description: taxon.currentProfile?.description ?? null,
-      habitat_notes: taxon.currentProfile?.habitat ?? null,
+      vicflora_uuid: concept.id,
+      scientific_name: concept.taxonName?.fullNameWithAuthorship ?? null,
+      scientific_name_without_author: concept.taxonName?.fullName ?? null,
+      scientific_name_authorship: concept.taxonName?.authorship ?? null,
+      specific_epithet: concept.taxonName?.namePart ?? null,
+      taxonomic_status: concept.taxonomicStatus
+        ? concept.taxonomicStatus.charAt(0) + concept.taxonomicStatus.slice(1).toLowerCase()
+        : null,
+      plant_origin: vicfloraOriginFrom(concept),
+      common_names,
+      synonyms,
+      conservation_status,
+      description: profile.description,
+      habitat_notes: profile.habitat_notes,
+      notes: profile.notes,
+      flowering_months,
+      fruiting_months,
+      distribution_native: concept.establishmentMeans === 'NATIVE' || concept.establishmentMeans === 'NATIVE_REINTRODUCED' ? ['VIC'] : [],
+      distribution_introduced: concept.establishmentMeans === 'INTRODUCED' ? ['VIC'] : [],
     }
   } catch (err) {
     console.error('VicFlora fetch error:', err)
@@ -291,14 +435,21 @@ function mergeApiResults(results) {
         continue
       }
 
-      // For objects (conservation_status), deep merge
+      // For objects (conservation_status), fill missing keys only — first
+      // source wins per-key so VicFlora's epbc/ffg aren't clobbered by later APIs.
       if (typeof value === 'object' && !Array.isArray(value)) {
         if (!merged.data[key]) {
           merged.data[key] = {}
           merged.sources[key] = []
         }
-        Object.assign(merged.data[key], value)
-        if (Object.keys(value).length > 0 && !merged.sources[key].includes(source)) {
+        let touched = false
+        for (const [k, v] of Object.entries(value)) {
+          if (v !== null && v !== undefined && (merged.data[key][k] === undefined || merged.data[key][k] === null)) {
+            merged.data[key][k] = v
+            touched = true
+          }
+        }
+        if (touched && !merged.sources[key].includes(source)) {
           merged.sources[key].push(source)
         }
         continue
@@ -318,12 +469,16 @@ function mergeApiResults(results) {
 // ─── Main Lookup ─────────────────────────────────────────────────────────────
 
 export async function lookupSpecies(speciesName) {
+  // VicFlora is FIRST → its scalars (scientific_name, plant_origin, conservation,
+  // description, habitat) win the "first non-null wins" rule in mergeApiResults.
+  // Other sources fill gaps (taxonomy chain from GBIF, common names from ALA/iNat,
+  // POWO synonyms/distribution).
   const results = await Promise.allSettled([
+    fetchVicFlora(speciesName),
     fetchGBIF(speciesName),
     fetchALA(speciesName),
     fetchINaturalist(speciesName),
     fetchPOWO(speciesName),
-    fetchVicFlora(speciesName),
   ])
 
   const settled = results.map((r) => (r.status === 'fulfilled' ? r.value : null))

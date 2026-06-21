@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback } from 'react'
 import { supabase } from '../lib/supabase'
 
-export function useSpeciesList({ search = '', family = '', conservationStatus = '', lifeForm = '', sortBy = 'scientific_name', sortOrder = 'asc', page = 1, pageSize = 20 } = {}) {
+export function useSpeciesList({ search = '', family = '', plantOrigin = '', conservationStatus = '', lifeForm = '', sortBy = 'scientific_name', sortOrder = 'asc', page = 1, pageSize = 20 } = {}) {
   const [species, setSpecies] = useState([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
@@ -24,6 +24,10 @@ export function useSpeciesList({ search = '', family = '', conservationStatus = 
         query = query.eq('family', family)
       }
 
+      if (plantOrigin) {
+        query = query.eq('plant_origin', plantOrigin)
+      }
+
       if (lifeForm) {
         query = query.ilike('life_form', `%${lifeForm}%`)
       }
@@ -44,7 +48,7 @@ export function useSpeciesList({ search = '', family = '', conservationStatus = 
     } finally {
       setLoading(false)
     }
-  }, [search, family, conservationStatus, lifeForm, sortBy, sortOrder, page, pageSize])
+  }, [search, family, plantOrigin, conservationStatus, lifeForm, sortBy, sortOrder, page, pageSize])
 
   useEffect(() => {
     fetchSpecies()
